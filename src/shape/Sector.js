@@ -32,23 +32,54 @@ const getTangentCircle = ({ cx, cy, radius, angle, sign, isExternal,
   return { center, circleTangency, lineTangency, theta };
 };
 
+/*
+  This draws the regular radial bar with square edges.
+  - cx: is the x component of the center of the radial chart.
+  - cy: is the y component of the center of the radial chart.
+  - innerRadius: is the radius of the inner circumference of the radial bar.
+  - outerRadius: is the radius of the outer circumference of the radial bar.
+  - startAngle: the radial bar can start at any point of the circumference.
+  - endAngle: where the radial bar ends.
+*/
 const getSectorPath = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle }) => {
+  // The length in degrees of the radial bar.
   const angle = getDeltaAngle(startAngle, endAngle);
 
   // When the angle of sector equals to 360, star point and end point coincide
   const tempEndAngle = startAngle + angle;
+
+  // Given the center, the radius and the start angle we get the coordinate
+  // where the radial bar should start. And the same with the end of the 
+  // radial bar.
   const outerStartPoint = polarToCartesian(cx, cy, outerRadius, startAngle);
   const outerEndPoint = polarToCartesian(cx, cy, outerRadius, tempEndAngle);
 
+  // First line: start drawing at the start point coordinates.
+  // Second line: draw the arc that is the outer edge of the radial bar,
+  //    the `outerRadius` is repeated for X and Y radius of the arc. Last "0"
+  //    means "no x-axis rotation".
+  // Third line: left half is "1" if the angle to draw is greater than 180º,
+  //    if is 180º or less, then "0". Right half is the "sweep-flag". There's
+  //    a handy chart which explains this in MDN.
+  // Last line: position where the drawing ends.
   let path = `M ${outerStartPoint.x},${outerStartPoint.y}
     A ${outerRadius},${outerRadius},0,
     ${+(Math.abs(angle) > 180)},${+(startAngle > tempEndAngle)},
     ${outerEndPoint.x},${outerEndPoint.y}
   `;
 
+  // If the inner radius is positive it means the radial bar is a bar indeed,
+  // meaning theres another curve we have to draw to complete the radial bar.
   if (innerRadius > 0) {
+    // Calculate the position where the inner curve of the bar ends.
     const innerStartPoint = polarToCartesian(cx, cy, innerRadius, startAngle);
     const innerEndPoint = polarToCartesian(cx, cy, innerRadius, tempEndAngle);
+    // First line: draw a straight line from the end of the outer curve to the
+    //   end of the inner curve, this way we continue the drawing from the 
+    //   last step.
+    // The rest is the same as the first curve, we draw an arc from the end
+    // of the inner curve to the beginning, and finally the "Z" command ends
+    // automatically the drawing, instead of drawing a line.
     path += `L ${innerEndPoint.x},${innerEndPoint.y}
             A ${innerRadius},${innerRadius},0,
             ${+(Math.abs(angle) > 180)},${+(startAngle <= tempEndAngle)},
