@@ -49,7 +49,7 @@ const getSectorPath = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle 
   const tempEndAngle = startAngle + angle;
 
   // Given the center, the radius and the start angle we get the coordinate
-  // where the radial bar should start. And the same with the end of the 
+  // where the radial bar should start. And the same with the end of the
   // radial bar.
   const outerStartPoint = polarToCartesian(cx, cy, outerRadius, startAngle);
   const outerEndPoint = polarToCartesian(cx, cy, outerRadius, tempEndAngle);
@@ -75,7 +75,7 @@ const getSectorPath = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle 
     const innerStartPoint = polarToCartesian(cx, cy, innerRadius, startAngle);
     const innerEndPoint = polarToCartesian(cx, cy, innerRadius, tempEndAngle);
     // First line: draw a straight line from the end of the outer curve to the
-    //   end of the inner curve, this way we continue the drawing from the 
+    //   end of the inner curve, this way we continue the drawing from the
     //   last step.
     // The rest is the same as the first curve, we draw an arc from the end
     // of the inner curve to the beginning, and finally the "Z" command ends
@@ -91,19 +91,35 @@ const getSectorPath = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle 
   return path;
 };
 
+// Same as getSectorPath but also receives the prop "cornerRadius".
 const getSectorWithCorner = ({ cx, cy, innerRadius, outerRadius, cornerRadius, forceCornerRadius,
   startAngle, endAngle }) => {
+
+  // Just a guess but if there's a chart that starts at 0 degrees and ends
+  // at 180 (counter clockwise) for the positive values, the negative values
+  // would go down, in clockwise direction.
   const sign = mathSign(endAngle - startAngle);
+
+  // (See annotated chart image)
+  // "soct": circle tangency for the start of the outer edge of radial bar.
+  // "solt": line tangency for the start of the outer edge of radial bar.
   const { circleTangency: soct, lineTangency: solt, theta: sot } =
     getTangentCircle({
       cx, cy, radius: outerRadius, angle: startAngle, sign, cornerRadius,
     });
+
+  // (See annotated chart image)
+  // "eoct": circle tangency for the end of the outer edge of radial bar.
+  // "eolt": line tangency for the end of the outer edge of radial bar.
   const { circleTangency: eoct, lineTangency: eolt, theta: eot } =
     getTangentCircle({
       cx, cy, radius: outerRadius, angle: endAngle, sign: -sign, cornerRadius,
     });
+
   const outerArcAngle = Math.abs(startAngle - endAngle) - sot - eot;
 
+  // The radial bar is too short to hold the rounded corners,
+  // so lets draw a circle instead.
   if (outerArcAngle < 0) {
     if (forceCornerRadius) {
       return `M ${solt.x},${solt.y}
@@ -116,27 +132,42 @@ const getSectorWithCorner = ({ cx, cy, innerRadius, outerRadius, cornerRadius, f
     });
   }
 
+  // Draw the outer edge of the radial bar, beginning with the corner radius.
+  // Here I need to modify the starting point to be outside the square radial bar.
   let path = `M ${solt.x},${solt.y}
     A${cornerRadius},${cornerRadius},0,0,${+(sign < 0)},${soct.x},${soct.y}
     A${outerRadius},${outerRadius},0,${+(outerArcAngle > 180)},${+(sign < 0)},${eoct.x},${eoct.y}
     A${cornerRadius},${cornerRadius},0,0,${+(sign < 0)},${eolt.x},${eolt.y}
   `;
 
+  // Draw the inner edge of the radial bar, if applicable.
   if (innerRadius > 0) {
+
+    // (See annotated chart image)
+    // "sict": circle tangency for the start of the inner edge of radial bar.
+    // "silt": line tangency for the start of the inner edge of radial bar.
     const { circleTangency: sict, lineTangency: silt, theta: sit } =
       getTangentCircle({
         cx, cy, radius: innerRadius, angle: startAngle, sign, isExternal: true, cornerRadius,
       });
+
+    // (See annotated chart image)
+    // "eict": circle tangency for the end of the inner edge of radial bar.
+    // "eilt": line tangency for the end of the inner edge of radial bar.
     const { circleTangency: eict, lineTangency: eilt, theta: eit } =
       getTangentCircle({
         cx, cy, radius: innerRadius, angle: endAngle, sign: -sign, isExternal: true, cornerRadius,
       });
+
     const innerArcAngle = Math.abs(startAngle - endAngle) - sit - eit;
 
     if (innerArcAngle < 0) {
       return `${path}L${cx},${cy}Z`;
     }
 
+    // And finally we draw the inner edge of the radial bar.
+    // This also needs to be adjusted for the starting point to be
+    // outside the square radial bar.
     path += `L${eilt.x},${eilt.y}
       A${cornerRadius},${cornerRadius},0,0,${+(sign < 0)},${eict.x},${eict.y}
       A${innerRadius},${innerRadius},0,${+(innerArcAngle > 180)},${+(sign > 0)},${sict.x},${sict.y}
