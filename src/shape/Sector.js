@@ -17,18 +17,54 @@ const getDeltaAngle = (startAngle, endAngle) => {
   return sign * deltaAngle;
 };
 
+/* This function calculates the circle that will describe each of the
+ * rounded edges. The params are:
+ *
+ *  - (cx, cy) is the RadialBar center.
+ *  - "radius" is the length from the center to the inner or outer edge
+ *    of the radial bar. 112px and 128px respectively.
+ *  - "angle" when drawing the start of the radial bar is 90.
+ *     When drawing the end of the 50% bar it's -90.
+ *  - "sign" is -1 if angle is positive, 1 if negative.
+ *  - "isExternal" is true when called for the inner edge of the radial bar.
+ *  - "cornerRadius" of the rounded edges.
+ */
 const getTangentCircle = ({ cx, cy, radius, angle, sign, isExternal,
-  cornerRadius }) => {
-  const centerRadius = cornerRadius * (isExternal ? 1 : -1) + radius;
-  const theta = Math.asin(cornerRadius / centerRadius) / RADIAN;
-  const centerAngle = angle + sign * theta;
-  const center = polarToCartesian(cx, cy, centerRadius, centerAngle);
-  // The coordinate of point which is tangent to the circle
-  const circleTangency = polarToCartesian(cx, cy, radius, centerAngle);
-  // The coordinate of point which is tangent to the radius line
-  const lineTangency = polarToCartesian(
-    cx, cy, centerRadius * Math.cos(theta * RADIAN), angle);
+  cornerRadius, cornerIsExternal }) => {
 
+  // The center radius is:
+  //   - (Circle radius - Corner radius) for outer edge.
+  //   - (Circle radius + Corner radius) for inner edge.
+  const centerRadius = cornerRadius * (isExternal ? 1 : -1) + radius;
+
+  /* For cornerRadius 8px and radius 128px:
+   *
+   * theta = arcsin(8 / (-8 + 128))
+   * theta = arcsin(8 / 120)
+   * theta = arcsin(1 / 15)
+   * theta = 0.06666 rad = 3.82 degrees
+   *
+   * This means that the center for the rounded edge circle is
+   * 3.82 degrees to the right of "angle", so:
+   *   90 - 3.82 = 86,18 degrees.
+   */
+  const theta = Math.asin(cornerRadius / centerRadius) / RADIAN;
+  const centerAngle = cornerIsExternal ? angle : angle + sign * theta;
+
+  // Coordinate of the rounded edge circle.
+  const center = polarToCartesian(cx, cy, centerRadius, centerAngle);
+
+  // (original comment) The coordinate of point which is tangent to the circle
+  const circleTangency = polarToCartesian(cx, cy, radius, centerAngle);
+
+  // (original comment) The coordinate of point which is tangent to the radius line
+  const lineTangencyAngle = cornerIsExternal ? angle - sign * theta : angle;
+  const lineTangency = polarToCartesian(
+    cx, cy, centerRadius * Math.cos(theta * RADIAN), lineTangencyAngle);
+  console.log('');
+  console.log(cx, cy, radius, angle, sign, isExternal,
+    cornerRadius);
+  console.log('centerAngle', centerAngle, 'center', center, 'circleTangency', circleTangency, 'lineTangency', lineTangency, 'theta', theta);
   return { center, circleTangency, lineTangency, theta };
 };
 
@@ -93,7 +129,7 @@ const getSectorPath = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle 
 
 // Same as getSectorPath but also receives the prop "cornerRadius".
 const getSectorWithCorner = ({ cx, cy, innerRadius, outerRadius, cornerRadius, forceCornerRadius,
-  startAngle, endAngle }) => {
+  cornerIsExternal, startAngle, endAngle }) => {
 
   // Just a guess but if there's a chart that starts at 0 degrees and ends
   // at 180 (counter clockwise) for the positive values, the negative values
@@ -106,6 +142,7 @@ const getSectorWithCorner = ({ cx, cy, innerRadius, outerRadius, cornerRadius, f
   const { circleTangency: soct, lineTangency: solt, theta: sot } =
     getTangentCircle({
       cx, cy, radius: outerRadius, angle: startAngle, sign, cornerRadius,
+      cornerIsExternal,
     });
 
   // (See annotated chart image)
@@ -114,6 +151,7 @@ const getSectorWithCorner = ({ cx, cy, innerRadius, outerRadius, cornerRadius, f
   const { circleTangency: eoct, lineTangency: eolt, theta: eot } =
     getTangentCircle({
       cx, cy, radius: outerRadius, angle: endAngle, sign: -sign, cornerRadius,
+      cornerIsExternal,
     });
 
   const outerArcAngle = Math.abs(startAngle - endAngle) - sot - eot;
@@ -148,7 +186,7 @@ const getSectorWithCorner = ({ cx, cy, innerRadius, outerRadius, cornerRadius, f
     // "silt": line tangency for the start of the inner edge of radial bar.
     const { circleTangency: sict, lineTangency: silt, theta: sit } =
       getTangentCircle({
-        cx, cy, radius: innerRadius, angle: startAngle, sign, isExternal: true, cornerRadius,
+        cx, cy, radius: innerRadius, angle: startAngle, sign, isExternal: true, cornerRadius, cornerIsExternal,
       });
 
     // (See annotated chart image)
@@ -156,7 +194,7 @@ const getSectorWithCorner = ({ cx, cy, innerRadius, outerRadius, cornerRadius, f
     // "eilt": line tangency for the end of the inner edge of radial bar.
     const { circleTangency: eict, lineTangency: eilt, theta: eit } =
       getTangentCircle({
-        cx, cy, radius: innerRadius, angle: endAngle, sign: -sign, isExternal: true, cornerRadius,
+        cx, cy, radius: innerRadius, angle: endAngle, sign: -sign, isExternal: true, cornerRadius, cornerIsExternal,
       });
 
     const innerArcAngle = Math.abs(startAngle - endAngle) - sit - eit;
@@ -195,6 +233,8 @@ class Sector extends Component {
     startAngle: PropTypes.number,
     endAngle: PropTypes.number,
     cornerRadius: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+    forceCornerRadius: PropTypes.bool,
+    cornerIsExternal: PropTypes.bool,
   };
 
   static defaultProps = {
@@ -205,11 +245,13 @@ class Sector extends Component {
     startAngle: 0,
     endAngle: 0,
     cornerRadius: 0,
+    forceCornerRadius: false,
+    cornerIsExternal: false,
   };
 
   render() {
-    const { cx, cy, innerRadius, outerRadius, cornerRadius, forceCornerRadius, startAngle, endAngle,
-      className } = this.props;
+    const { cx, cy, innerRadius, outerRadius, cornerRadius, forceCornerRadius, cornerIsExternal,
+      startAngle, endAngle, className } = this.props;
 
     if (outerRadius < innerRadius || startAngle === endAngle) { return null; }
 
@@ -223,6 +265,7 @@ class Sector extends Component {
         cx, cy, innerRadius, outerRadius,
         cornerRadius: Math.min(cr, deltaRadius / 2),
         forceCornerRadius,
+        cornerIsExternal,
         startAngle, endAngle,
       });
     } else {
